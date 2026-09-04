@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import ipaddress
 import random
+import socket
+import urllib.parse
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -14,7 +17,7 @@ from pydantic import BaseModel, Field
 from app import base
 
 SERVICE = "sm-observability"
-VERSION = "2.0.0"
+VERSION = "2.0.1"
 NAME = "SM Observability"
 DESCRIPTION = "企业监控运维平台：目标探测、SLO、告警与可用性报表"
 PORT = 8330
@@ -22,6 +25,43 @@ PORT = 8330
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+# 禁止探测的地址段：环回/内网/链路本地/云元数据/文档段，杜绝 SSRF 内网扫描
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("0.0.0.0/8"),
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("100.64.0.0/10"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.0.0.0/24"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("198.18.0.0/15"),
+    ipaddress.ip_network("::/128"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+]
+
+
+def _is_blocked_ip(ip: ipaddress._BaseAddress) -> bool:
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    return any(ip in net for net in _BLOCKED_NETWORKS)
+
+
+def _safe_target_url(url: str) -> bool:
+    """SSRF 防线：仅允许 http/https，且解析后的所有地址不得命中内网/环回/链路本地/云元数据。"""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            return False
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        infos = socket.getaddrinfo(parsed.hostname, port, proto=socket.IPPROTO_TCP)
+        return all(not _is_blocked_ip(ipaddress.ip_address(info[4][0])) for info in infos)
+    except Exception:
+        return False
 
 
 def _init() -> None:
@@ -89,6 +129,8 @@ def list_targets() -> dict[str, Any]:
 @app.post("/api/obs/targets", status_code=status.HTTP_201_CREATED)
 def create_target(payload: TargetIn, request: Request) -> dict[str, Any]:
     base.require_internal_token(request)
+    if not _safe_target_url(payload.url):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "非法的探测目标地址（仅允许公网 http/https）")
     target_id = str(uuid.uuid4())
     with base.db_ctx() as conn:
         try:
@@ -112,6 +154,8 @@ async def run_probe(payload: dict[str, Any], request: Request) -> dict[str, Any]
             probe_status = "up"
             latency = round(random.uniform(5, 120), 2)
         else:
+            if not _safe_target_url(target["url"]):
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "探测目标地址不合规（SSRF 防护）")
             try:
                 async with httpx.AsyncClient(timeout=httpx.Timeout(3.0, connect=1.5), trust_env=False) as client:
                     response = await client.get(target["url"])

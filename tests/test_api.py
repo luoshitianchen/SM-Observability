@@ -19,7 +19,7 @@ def client(monkeypatch):
 
 
 def _target(client, name="fusion"):
-    return client.post("/api/obs/targets", json={"name": name, "url": "http://127.0.0.1:8200/health", "owner": "SRE"}).json()["id"]
+    return client.post("/api/obs/targets", json={"name": name, "url": "http://example.com/health", "owner": "SRE"}).json()["id"]
 
 
 def test_health_and_version(client):
@@ -28,9 +28,42 @@ def test_health_and_version(client):
     assert r.json()["version"] == VERSION
 
 
+def test_target_ssrf_rejected(client):
+    """SSRF 防线：环回/内网/链路本地/云元数据/非 http(s) 一律拒绝。"""
+    evil = [
+        "http://127.0.0.1:8200/health",
+        "http://169.254.169.254/latest/meta-data/",
+        "http://10.0.0.1/",
+        "http://192.168.1.1/",
+        "http://172.16.0.1/",
+        "file:///etc/passwd",
+        "ftp://example.com/x",
+    ]
+    for i, url in enumerate(evil):
+        r = client.post("/api/obs/targets", json={"name": f"evil{i}", "url": url})
+        assert r.status_code == 400, f"应拒绝 {url}, got {r.status_code}"
+    assert client.get("/api/obs/targets").json()["total"] == 0
+
+
+def test_probe_rejects_stored_blocked_url(client):
+    """probe 阶段二次防线：即使 DB 中已存在内网目标，探测时仍被拒绝。"""
+    import uuid
+
+    from app import base
+
+    with base.db_ctx() as conn:
+        tid = str(uuid.uuid4())
+        conn.execute(
+            "INSERT INTO targets (id, name, url, expected_status, interval_seconds, owner, created_at) VALUES (?,?,?,?,?,?,?)",
+            (tid, "legacy-internal", "http://127.0.0.1:8200/health", 200, 60, "SRE", "2026-01-01T00:00:00+00:00"),
+        )
+    r = client.post("/api/obs/probe", json={"target_id": tid, "simulate": False})
+    assert r.status_code == 400, f"探测阶段应拒绝内网目标, got {r.status_code}"
+
+
 def test_target_lifecycle(client):
     _target(client)
-    assert client.post("/api/obs/targets", json={"name": "fusion", "url": "http://x"}).status_code == 409
+    assert client.post("/api/obs/targets", json={"name": "fusion", "url": "http://example.com/other"}).status_code == 409
     assert client.get("/api/obs/targets").json()["total"] == 1
 
 
