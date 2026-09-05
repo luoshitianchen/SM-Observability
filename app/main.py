@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from app import base
 
 SERVICE = "sm-observability"
-VERSION = "2.0.1"
+VERSION = "3.0.0"
 NAME = "SM Observability"
 DESCRIPTION = "企业监控运维平台：目标探测、SLO、告警与可用性报表"
 PORT = 8330
