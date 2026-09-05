@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: sm-observability
+  namespace: sm
+  labels:
+    app: sm-observability
+    platform: sm-suite
+spec:
+  type: ClusterIP
+  selector:
+    app: sm-observability
+  ports:
+  - name: http
+    port: 8330
+    targetPort: http
+    protocol: TCP
