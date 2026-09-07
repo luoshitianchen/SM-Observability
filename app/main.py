@@ -152,7 +152,7 @@ async def run_probe(payload: dict[str, Any], request: Request) -> dict[str, Any]
             raise HTTPException(status.HTTP_404_NOT_FOUND, "探测目标不存在")
         if simulate:
             probe_status = "up"
-            latency = round(random.uniform(5, 120), 2)
+            latency = round(random.uniform(5, 120), 2)  # nosec B311  # random仅用于模拟/测试数据，非安全场景
         else:
             if not _safe_target_url(target["url"]):
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, "探测目标地址不合规（SSRF 防护）")
