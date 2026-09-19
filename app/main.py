@@ -11,7 +11,16 @@ from app.core.config import settings
 from app.core.database import init_db
 from app.core.logging import setup_logging
 from app.core.middleware import SecurityMiddleware
-from app.routers import crypto, health, items, meta, metrics
+from app.routers import (
+    crypto,
+    health,
+    items,
+    meta,
+    metrics,
+    observability_alerts,
+    observability_metrics,
+    observability_trace_rules,
+)
 
 setup_logging()
 
@@ -42,6 +51,9 @@ app.include_router(meta.router)
 app.include_router(crypto.router)
 app.include_router(items.router)
 app.include_router(metrics.router)
+app.include_router(observability_metrics.router)
+app.include_router(observability_trace_rules.router)
+app.include_router(observability_alerts.router)
 
 
 
