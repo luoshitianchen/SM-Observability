@@ -40,6 +40,7 @@ app = FastAPI(
     description=settings.DESCRIPTION,
     docs_url=None,
     redoc_url=None,
+    openapi_url=None,
     lifespan=lifespan,
 )
 
