@@ -1,0 +1,12 @@
+apiVersion: v2
+name: sm-observability
+description: SM 微服务 Helm Chart - SM-Observability（可观测性服务）
+type: application
+version: 1.0.0
+appVersion: "2.1.0"
+keywords:
+  - sm-microservices
+  - enterprise
+  - sm-observability
+maintainers:
+  - name: sm-platform-team
